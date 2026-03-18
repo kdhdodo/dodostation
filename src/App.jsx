@@ -3,8 +3,15 @@ import { supabase } from "./supabase";
 
 const ALLOWED_EMAIL = "kdh@menuit.io";
 
+const tabs = [
+  { id: "home", label: "도도스테이션" },
+  { id: "medical", label: "의료" },
+  { id: "stock", label: "주식" },
+];
+
 const sections = [
   { id: "medical", label: "Medical", status: "준비중" },
+  { id: "stock", label: "Stock", status: "준비중" },
 ];
 
 function Login() {
@@ -127,35 +134,71 @@ function Login() {
   );
 }
 
-function Home({ onLogout }) {
+function Header({ activeTab, setActiveTab, onLogout }) {
   return (
     <div style={{
-      minHeight: "100vh",
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 56,
       background: "#0a0a0a",
-      color: "#e0e0e0",
+      borderBottom: "1px solid #1a1a1a",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "0 24px",
+      zIndex: 100,
       fontFamily: "'Noto Sans KR', sans-serif",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            style={{
+              background: "none",
+              border: "none",
+              color: activeTab === t.id ? "#fff" : "#555",
+              fontSize: t.id === "home" ? "1rem" : "0.9rem",
+              fontWeight: t.id === "home" ? 700 : activeTab === t.id ? 600 : 400,
+              cursor: "pointer",
+              padding: "4px 0",
+              borderBottom: activeTab === t.id ? "2px solid #fff" : "2px solid transparent",
+              letterSpacing: t.id === "home" ? "0.08em" : 0,
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={onLogout}
+        style={{
+          padding: "6px 16px",
+          borderRadius: 6,
+          border: "1px solid #333",
+          background: "transparent",
+          color: "#666",
+          fontSize: "0.8rem",
+          cursor: "pointer",
+        }}
+      >
+        로그아웃
+      </button>
+    </div>
+  );
+}
+
+function HomePage() {
+  return (
+    <div style={{
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
+      minHeight: "calc(100vh - 56px)",
     }}>
-      <div style={{ position: "fixed", top: 20, right: 24 }}>
-        <button
-          onClick={onLogout}
-          style={{
-            padding: "6px 16px",
-            borderRadius: 6,
-            border: "1px solid #333",
-            background: "transparent",
-            color: "#666",
-            fontSize: "0.8rem",
-            cursor: "pointer",
-          }}
-        >
-          로그아웃
-        </button>
-      </div>
-
       <h1 style={{
         fontSize: "2.4rem",
         fontWeight: 700,
@@ -173,7 +216,6 @@ function Home({ onLogout }) {
       }}>
         Personal Hub
       </p>
-
       <div style={{
         display: "flex",
         gap: 24,
@@ -188,18 +230,8 @@ function Home({ onLogout }) {
             borderRadius: 12,
             border: "1px solid #222",
             textAlign: "center",
-            transition: "border-color 0.2s",
-            cursor: "default",
-          }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = "#444"}
-          onMouseLeave={e => e.currentTarget.style.borderColor = "#222"}
-          >
-            <div style={{
-              fontSize: "1.1rem",
-              fontWeight: 600,
-              color: "#fff",
-              marginBottom: 12,
-            }}>
+          }}>
+            <div style={{ fontSize: "1.1rem", fontWeight: 600, color: "#fff", marginBottom: 12 }}>
               {s.label}
             </div>
             <div style={{
@@ -215,10 +247,49 @@ function Home({ onLogout }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
 
+function ComingSoon({ title }) {
+  return (
+    <div style={{
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: "calc(100vh - 56px)",
+    }}>
+      <div style={{ fontSize: "1.4rem", fontWeight: 600, color: "#fff", marginBottom: 12 }}>
+        {title}
+      </div>
+      <div style={{ fontSize: "0.9rem", color: "#555" }}>준비중</div>
+    </div>
+  );
+}
+
+function Home({ onLogout }) {
+  const [activeTab, setActiveTab] = useState("home");
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "#0a0a0a",
+      color: "#e0e0e0",
+      fontFamily: "'Noto Sans KR', sans-serif",
+    }}>
+      <Header activeTab={activeTab} setActiveTab={setActiveTab} onLogout={onLogout} />
+      <div style={{ paddingTop: 56 }}>
+        {activeTab === "home" && <HomePage />}
+        {activeTab === "medical" && <ComingSoon title="Medical" />}
+        {activeTab === "stock" && <ComingSoon title="Stock" />}
+      </div>
       <div style={{
         position: "fixed",
         bottom: 24,
+        left: 0,
+        right: 0,
+        textAlign: "center",
         fontSize: "0.75rem",
         color: "#333",
       }}>
