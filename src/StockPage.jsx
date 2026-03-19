@@ -1,9 +1,20 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 
+function useMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return isMobile;
+}
+
 const OPENAI_KEY = import.meta.env.VITE_OPENAI_KEY;
 
 export default function StockPage() {
+  const isMobile = useMobile();
   const [ticker, setTicker] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -100,7 +111,7 @@ export default function StockPage() {
   function handleKey(e) { if (e.key === "Enter") loadChart(); }
 
   return (
-    <div style={{ display: "flex", gap: 16, padding: "16px 24px", minHeight: "calc(100vh - 112px)" }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 16, padding: isMobile ? "12px 12px" : "16px 24px", minHeight: "calc(100vh - 112px)" }}>
       {/* 왼쪽: 검색 + 차트 + 분석 */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* 검색 */}
@@ -180,7 +191,7 @@ export default function StockPage() {
       </div>
 
       {/* 오른쪽: 모니터링 */}
-      <div style={{ width: 260, flexShrink: 0 }}>
+      <div style={{ width: isMobile ? "100%" : 260, flexShrink: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#ccc" }}>모니터링</div>
           <button onClick={loadWatchlist} disabled={wlLoading} style={{
@@ -232,6 +243,7 @@ export default function StockPage() {
 // 공통 컴포넌트
 // ════════════════════════════════════
 function TradingViewChart({ symbol }) {
+  const isMobile = useMobile();
   const containerRef = useRef(null);
   useEffect(() => {
     if (!containerRef.current) return;
@@ -250,7 +262,7 @@ function TradingViewChart({ symbol }) {
   }, [symbol]);
 
   return (
-    <div style={{ background: "#11141c", borderRadius: 10, border: "1px solid #1e2130", overflow: "hidden", marginBottom: 12, height: 1100 }}>
+    <div style={{ background: "#11141c", borderRadius: 10, border: "1px solid #1e2130", overflow: "hidden", marginBottom: 12, height: isMobile ? 500 : 1100 }}>
       <div ref={containerRef} style={{ height: "100%" }} />
     </div>
   );

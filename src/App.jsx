@@ -2,6 +2,16 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import StockPage from "./StockPage";
 
+function useMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return isMobile;
+}
+
 const ALLOWED_EMAIL = "kdh@menuit.io";
 
 const tabs = [
@@ -191,6 +201,7 @@ function ChangePasswordModal({ onClose }) {
 }
 
 function Header({ activeTab, setActiveTab, onLogout, onChangePassword }) {
+  const isMobile = useMobile();
   return (
     <div style={{
       position: "fixed",
@@ -203,11 +214,11 @@ function Header({ activeTab, setActiveTab, onLogout, onChangePassword }) {
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
-      padding: "0 24px",
+      padding: "0 16px",
       zIndex: 100,
       fontFamily: "'Noto Sans KR', sans-serif",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 16 : 32 }}>
         {tabs.map(t => (
           <button
             key={t.id}
@@ -216,7 +227,7 @@ function Header({ activeTab, setActiveTab, onLogout, onChangePassword }) {
               background: "none",
               border: "none",
               color: t.id === "home" ? "#fff" : activeTab === t.id ? "#fff" : "#555",
-              fontSize: t.id === "home" ? "1rem" : "0.9rem",
+              fontSize: t.id === "home" ? (isMobile ? "0.85rem" : "1rem") : (isMobile ? "0.8rem" : "0.9rem"),
               fontWeight: t.id === "home" ? 700 : activeTab === t.id ? 600 : 400,
               cursor: t.id === "home" ? "default" : "pointer",
               padding: "4px 0",
@@ -229,7 +240,7 @@ function Header({ activeTab, setActiveTab, onLogout, onChangePassword }) {
         ))}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <button
+        {!isMobile && <button
           onClick={onChangePassword}
           style={{
             padding: "6px 16px",
@@ -242,7 +253,7 @@ function Header({ activeTab, setActiveTab, onLogout, onChangePassword }) {
           }}
         >
           비밀번호 변경
-        </button>
+        </button>}
         <button
           onClick={onLogout}
           style={{
@@ -359,6 +370,7 @@ const organMap = {
 };
 
 function BodyDiagram({ diagnoses, onSelect }) {
+  const isMobile = useMobile();
   const activeOrgans = new Set((diagnoses || []).map(d => organMap[d.organ]).filter(Boolean));
 
   const organs = [
@@ -374,8 +386,8 @@ function BodyDiagram({ diagnoses, onSelect }) {
   const labelX = 355;
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "40px 0" }}>
-      <svg width="500" height="480" viewBox="0 0 500 480">
+    <div style={{ display: "flex", justifyContent: "center", padding: "24px 0", overflowX: "hidden" }}>
+      <svg width={isMobile ? "100%" : "500"} height={isMobile ? "auto" : "480"} viewBox="0 0 500 480" style={{ maxWidth: 500 }}>
         <ellipse cx="200" cy="45" rx="28" ry="32" fill="none" stroke="#444" strokeWidth="1.5" />
         <line x1="200" y1="77" x2="200" y2="95" stroke="#444" strokeWidth="1.5" />
         <path d="M160,95 Q140,95 135,115 L130,200 Q128,260 140,300 L155,340 Q160,355 165,360 L170,370" fill="none" stroke="#444" strokeWidth="1.5" />
