@@ -26,7 +26,7 @@ export default function StockPage() {
     if (!data || data.length === 0) { setWatchlist([]); setWlLoading(false); return; }
     const updated = await Promise.all(data.map(async (item) => {
       try {
-        const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${item.ticker}?range=5d&interval=1d`)}`);
+        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${item.ticker}?range=5d&interval=1d`)}`);
         const json = await res.json();
         const closes = (json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(c => c != null);
         const cur = closes[closes.length - 1];
@@ -45,7 +45,7 @@ export default function StockPage() {
     if (val.trim().length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
     searchTimeout.current = setTimeout(async () => {
       try {
-        const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v1/finance/search?q=${val.trim()}&quotesCount=8&newsCount=0`)}`);
+        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v1/finance/search?q=${val.trim()}&quotesCount=8&newsCount=0`)}`);
         const data = await res.json();
         const quotes = (data.quotes || []).map(q => ({ symbol: q.symbol, name: q.shortname || q.longname || "", type: q.quoteType || "", exchange: q.exchDisp || "" }));
         setSuggestions(quotes);
@@ -294,7 +294,7 @@ function getPricePrefix(ticker) {
 }
 
 async function fetchStockData(t) {
-  const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${t}?range=3mo&interval=1d`)}`);
+  const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${t}?range=3mo&interval=1d`)}`);
   if (!res.ok) throw new Error("티커를 찾을 수 없습니다.");
   const json = await res.json();
   const chart = json?.chart?.result?.[0];
