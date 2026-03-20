@@ -38,11 +38,21 @@ export default async function handler(req, res) {
 
   // 토큰 발급
   if (path === "oauth2/tokenP") {
-    const token = await getToken();
-    if (token) {
-      return res.status(200).json({ access_token: token, token_type: "Bearer" });
-    } else {
-      return res.status(500).json({ error: "Token failed", hasKey: !!APPKEY });
+    try {
+      const tRes = await fetch("https://openapi.koreainvestment.com:9443/oauth2/tokenP", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grant_type: "client_credentials", appkey: APPKEY, appsecret: APPSECRET }),
+      });
+      const tJson = await tRes.json();
+      if (tJson.access_token) {
+        _token = tJson.access_token;
+        _tokenExp = Date.now() + 23 * 3600000;
+        return res.status(200).json({ access_token: _token, token_type: "Bearer" });
+      }
+      return res.status(500).json({ error: "Token failed", detail: tJson });
+    } catch(e) {
+      return res.status(500).json({ error: e.message });
     }
   }
 
