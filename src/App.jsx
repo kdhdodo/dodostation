@@ -2173,38 +2173,82 @@ async function fetchAccountBalance() {
 
 function BalanceTab() {
   const [cash, setCash] = useState(null);
+  const [holdings, setHoldings] = useState(null);
   const [krwRate, setKrwRate] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const [cashData, rate] = await Promise.all([fetchAccountBalance(), getUSDKRW()]);
-      setCash(cashData);
-      setKrwRate(rate);
-      setLoading(false);
-    })();
-  }, []);
+  const refresh = async () => {
+    setLoading(true);
+    const [cashData, bal, rate] = await Promise.all([fetchAccountBalance(), fetchOverseasBalance(), getUSDKRW()]);
+    setCash(cashData);
+    setHoldings(bal);
+    setKrwRate(rate);
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, []);
 
   const r = krwRate || 1350;
+  const totalHoldingValue = holdings?.reduce((s, b) => s + b.currentPrice * b.qty, 0) || 0;
+  const totalPnl = holdings?.reduce((s, b) => s + b.pnl, 0) || 0;
 
   return (
     <div style={{ padding:16 }}>
       {loading && <div style={{ color:"#333", fontSize:12 }}>로딩 중...</div>}
 
       {!loading && cash && (
-        <div style={{ display:"flex", gap:12 }}>
-          <div style={{ flex:1, background:"#11141c", borderRadius:10, padding:20, textAlign:"center" }}>
-            <div style={{ color:"#555", fontSize:11, marginBottom:8 }}>원화 예수금</div>
-            <div style={{ color:"#fff", fontSize:24, fontWeight:700 }}>₩{Math.round(cash.krwCash).toLocaleString()}</div>
+        <>
+        <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+          <div style={{ flex:1, background:"#11141c", borderRadius:10, padding:16, textAlign:"center" }}>
+            <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>원화 예수금</div>
+            <div style={{ color:"#fff", fontSize:20, fontWeight:700 }}>₩{Math.round(cash.krwCash).toLocaleString()}</div>
           </div>
-          <div style={{ flex:1, background:"#11141c", borderRadius:10, padding:20, textAlign:"center" }}>
-            <div style={{ color:"#555", fontSize:11, marginBottom:8 }}>달러 예수금</div>
-            <div style={{ color:"#fff", fontSize:24, fontWeight:700 }}>${cash.usdCash.toFixed(2)}</div>
-            <div style={{ color:"#333", fontSize:10, marginTop:4 }}>≈ ₩{Math.round(cash.usdCash * r).toLocaleString()}</div>
-            <button onClick={() => alert("한투 앱 → 메뉴 → 환전 에서 원화→달러 환전하세요.\n\n또는 '원화주문 설정'을 켜두면 자동환전됩니다.")} style={{ marginTop:8, background:"#f5c518", border:"none", borderRadius:4, color:"#000", fontSize:11, fontWeight:600, padding:"5px 14px", cursor:"pointer" }}>환전</button>
+          <div style={{ flex:1, background:"#11141c", borderRadius:10, padding:16, textAlign:"center" }}>
+            <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>달러 예수금</div>
+            <div style={{ color:"#fff", fontSize:20, fontWeight:700 }}>${cash.usdCash.toFixed(2)}</div>
+          </div>
+          <div style={{ flex:1, background:"#11141c", borderRadius:10, padding:16, textAlign:"center" }}>
+            <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>보유 평가</div>
+            <div style={{ color:"#fff", fontSize:20, fontWeight:700 }}>${totalHoldingValue.toFixed(2)}</div>
+          </div>
+          <div style={{ flex:1, background:"#11141c", borderRadius:10, padding:16, textAlign:"center" }}>
+            <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>총 손익</div>
+            <div style={{ color: totalPnl >= 0 ? "#4caf50" : "#f44336", fontSize:20, fontWeight:700 }}>{totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(2)}</div>
           </div>
         </div>
+
+        {/* 보유 주식 */}
+        {holdings && holdings.length > 0 && (
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+              <span style={{ fontSize:12, color:"#555" }}>보유 주식</span>
+              <button onClick={refresh} style={{ background:"none", border:"1px solid #333", borderRadius:4, color:"#888", fontSize:10, padding:"2px 8px", cursor:"pointer" }}>↻ 새로고침</button>
+            </div>
+            {holdings.map((b, i) => (
+              <div key={i} style={{ background:"#11141c", borderRadius:8, padding:10, marginBottom:4 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                  <div>
+                    <span style={{ color:"#fff", fontSize:13, fontWeight:700 }}>{b.ticker}</span>
+                    <span style={{ color:"#555", fontSize:10, marginLeft:6 }}>{b.name}</span>
+                  </div>
+                  <span style={{ color: b.pnlRate >= 0 ? "#4caf50" : "#f44336", fontSize:15, fontWeight:700 }}>
+                    {b.pnlRate >= 0 ? "+" : ""}{b.pnlRate.toFixed(2)}%
+                  </span>
+                </div>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#888" }}>
+                  <span>{b.qty}주</span>
+                  <span>평단 ${b.avgPrice.toFixed(2)}</span>
+                  <span>현재 ${b.currentPrice.toFixed(2)}</span>
+                  <span style={{ color: b.pnl >= 0 ? "#4caf50" : "#f44336" }}>{b.pnl >= 0 ? "+" : ""}${b.pnl.toFixed(2)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {holdings && holdings.length === 0 && (
+          <div style={{ color:"#333", fontSize:12, textAlign:"center", padding:16, marginBottom:12 }}>보유 주식 없음</div>
+        )}
+        </>
       )}
 
       {!loading && !cash && (
