@@ -2058,6 +2058,16 @@ async function kisAPI(path, params = {}, trId = "", postBody = null) {
   } catch(e) { console.warn("[KIS] fetch error:", e); return null; }
 }
 
+async function detectExchange(ticker) {
+  try {
+    const res = await fetch(`/api/yahoo/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`);
+    if (!res.ok) return "NASD";
+    const json = await res.json();
+    const ex = json?.chart?.result?.[0]?.meta?.exchangeName || "";
+    return EXCHANGE_MAP[ex] || "NASD";
+  } catch { return "NASD"; }
+}
+
 async function kisOrder(side, ticker, qty, price = "0", exchange = "NASD") {
   const trId = side === "buy" ? "TTTT1002U" : "TTTT1006U";
   return kisAPI("/uapi/overseas-stock/v1/trading/order", {}, trId, {
@@ -2621,32 +2631,42 @@ function Bot1Strategy({ config }) {
       if (!pos && hitBelow35 && currentRsi >= p.buyEntry && prevRsi < p.buyEntry) {
         const qty = Math.floor(config.budget / currentPrice);
         if (qty <= 0) { addLog(`매수 불가: 예산($${config.budget}) < 주가($${currentPrice})`); return; }
-        addLog(`🔵 매수 신호! RSI ${currentRsi.toFixed(1)} (35↓ → 45↑) | $${currentPrice} × ${qty}주`);
-        // TODO: 실제 KIS 주문 API 연동
-        const newPos = { ticker: config.ticker, price: currentPrice, qty, time: new Date().toISOString() };
-        localStorage.setItem("bot1_position", JSON.stringify(newPos));
-        setPosition(newPos);
+        addLog(`🔵 매수 신호! RSI ${currentRsi.toFixed(1)} | $${currentPrice} × ${qty}주`);
+        const ex = await detectExchange(config.ticker);
+        const orderResult = await kisOrder("buy", config.ticker, qty, currentPrice.toFixed(2), ex);
+        if (orderResult?.rt_cd === "0") {
+          addLog(`✅ 매수 체결! ${config.ticker} ${qty}주 $${currentPrice.toFixed(2)}`);
+          const newPos = { ticker: config.ticker, price: currentPrice, qty, time: new Date().toISOString() };
+          localStorage.setItem("bot1_position", JSON.stringify(newPos));
+          setPosition(newPos);
+        } else { addLog(`❌ 매수 실패: ${orderResult?.msg1 || "알 수 없는 오류"}`); }
       }
 
-      // 매도 로직: RSI 70 이상 찍었다가 65 이하 도달 AND 수익률 +1% 이상
+      // 매도
       if (pos && hitAbove70 && currentRsi <= p.sellEntry && prevRsi > p.sellEntry) {
         const pnlPct = (currentPrice - pos.price) / pos.price * 100;
         if (pnlPct >= p.minProfit) {
-          addLog(`🔴 매도 신호! RSI ${currentRsi.toFixed(1)} (70↑ → 65↓) | 수익 +${pnlPct.toFixed(2)}% | $${currentPrice}`);
-          // TODO: 실제 KIS 주문 API 연동
-          localStorage.removeItem("bot1_position");
-          setPosition(null);
+          addLog(`🔴 매도 신호! +${pnlPct.toFixed(2)}% | $${currentPrice}`);
+          const ex = await detectExchange(pos.ticker);
+          const orderResult = await kisOrder("sell", pos.ticker, pos.qty, currentPrice.toFixed(2), ex);
+          if (orderResult?.rt_cd === "0") {
+            addLog(`✅ 매도 체결! ${pos.ticker} +${pnlPct.toFixed(2)}%`);
+            localStorage.removeItem("bot1_position"); setPosition(null);
+          } else { addLog(`❌ 매도 실패: ${orderResult?.msg1 || ""}`); }
         } else {
-          addLog(`⏳ 매도 조건이지만 수익 ${pnlPct.toFixed(2)}% < ${p.minProfit}%. 존버.`);
+          addLog(`⏳ 수익 ${pnlPct.toFixed(2)}% < ${p.minProfit}%. 존버.`);
         }
       }
       // 손절
       if (pos) {
         const pnlPct2 = (currentPrice - pos.price) / pos.price * 100;
         if (pnlPct2 <= p.stopLossPct) {
-          addLog(`🔻 손절! ${pnlPct2.toFixed(2)}% ≤ ${p.stopLossPct}% | $${currentPrice}`);
-          localStorage.removeItem("bot1_position");
-          setPosition(null);
+          addLog(`🔻 손절! ${pnlPct2.toFixed(2)}% | $${currentPrice}`);
+          const ex = await detectExchange(pos.ticker);
+          const orderResult = await kisOrder("sell", pos.ticker, pos.qty, currentPrice.toFixed(2), ex);
+          if (orderResult?.rt_cd === "0") { addLog(`✅ 손절 체결!`); }
+          else { addLog(`❌ 손절 주문 실패: ${orderResult?.msg1 || ""}`); }
+          localStorage.removeItem("bot1_position"); setPosition(null);
         }
       }
     } catch (e) {
@@ -3124,23 +3144,34 @@ function Bot3Strategy({ config }) {
         const qty = Math.floor(config.budget / currentPrice);
         if (qty > 0) {
           addLog(`🔵 매수! RSI ${currentRsi.toFixed(1)} ≤ ${p.rsiBuy} | $${currentPrice.toFixed(2)} × ${qty}주`);
-          const newPos = { ticker: config.ticker, price: currentPrice, qty, time: new Date().toISOString() };
-          localStorage.setItem("bot3_position", JSON.stringify(newPos));
-          setPosition(newPos);
+          const ex = await detectExchange(config.ticker);
+          const r = await kisOrder("buy", config.ticker, qty, currentPrice.toFixed(2), ex);
+          if (r?.rt_cd === "0") {
+            addLog(`✅ 매수 체결! ${config.ticker} ${qty}주`);
+            const newPos = { ticker: config.ticker, price: currentPrice, qty, time: new Date().toISOString() };
+            localStorage.setItem("bot3_position", JSON.stringify(newPos));
+            setPosition(newPos);
+          } else { addLog(`❌ 매수 실패: ${r?.msg1 || ""}`); }
         }
       }
 
-      // 매도: +targetPct% 이상
+      // 매도
       if (pos && pnlPct >= p.targetPct) {
-        addLog(`🔴 매도! +${pnlPct.toFixed(2)}% ≥ ${p.targetPct}% | $${currentPrice.toFixed(2)}`);
-        localStorage.removeItem("bot3_position");
-        setPosition(null);
+        addLog(`🔴 매도! +${pnlPct.toFixed(2)}% | $${currentPrice.toFixed(2)}`);
+        const ex = await detectExchange(pos.ticker);
+        const r = await kisOrder("sell", pos.ticker, pos.qty, currentPrice.toFixed(2), ex);
+        if (r?.rt_cd === "0") { addLog(`✅ 매도 체결!`); }
+        else { addLog(`❌ 매도 실패: ${r?.msg1 || ""}`); }
+        localStorage.removeItem("bot3_position"); setPosition(null);
       }
-      // 손절: stopLossPct% 이하
+      // 손절
       if (pos && pnlPct <= p.stopLossPct) {
-        addLog(`🔻 손절! ${pnlPct.toFixed(2)}% ≤ ${p.stopLossPct}% | $${currentPrice.toFixed(2)}`);
-        localStorage.removeItem("bot3_position");
-        setPosition(null);
+        addLog(`🔻 손절! ${pnlPct.toFixed(2)}% | $${currentPrice.toFixed(2)}`);
+        const ex = await detectExchange(pos.ticker);
+        const r = await kisOrder("sell", pos.ticker, pos.qty, currentPrice.toFixed(2), ex);
+        if (r?.rt_cd === "0") { addLog(`✅ 손절 체결!`); }
+        else { addLog(`❌ 손절 실패: ${r?.msg1 || ""}`); }
+        localStorage.removeItem("bot3_position"); setPosition(null);
       }
     } catch(e) { addLog(`❌ ${e.message}`); }
   };
@@ -3520,10 +3551,16 @@ function Bot4Strategy({ config }) {
           else if (elapsed > 30) target = Math.max(p.targetPct * 0.8, p.minTargetPct);
           setScanStatus(`${pos.ticker} 보유 중 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`);
           if (pnl >= target) {
-            addLog(`🔴 매도 ${pos.ticker} +${pnl.toFixed(2)}% | $${price.toFixed(2)}`);
+            addLog(`🔴 매도 ${pos.ticker} +${pnl.toFixed(2)}%`);
+            const ex = await detectExchange(pos.ticker);
+            const r = await kisOrder("sell", pos.ticker, pos.qty, price.toFixed(2), ex);
+            if (r?.rt_cd === "0") addLog(`✅ 매도 체결!`); else addLog(`❌ 매도 실패: ${r?.msg1 || ""}`);
             localStorage.removeItem("bot4_position"); setPosition(null);
           } else if (pnl <= p.stopLossPct) {
-            addLog(`🔻 손절 ${pos.ticker} ${pnl.toFixed(2)}% | $${price.toFixed(2)}`);
+            addLog(`🔻 손절 ${pos.ticker} ${pnl.toFixed(2)}%`);
+            const ex = await detectExchange(pos.ticker);
+            const r = await kisOrder("sell", pos.ticker, pos.qty, price.toFixed(2), ex);
+            if (r?.rt_cd === "0") addLog(`✅ 손절 체결!`); else addLog(`❌ 손절 실패: ${r?.msg1 || ""}`);
             localStorage.removeItem("bot4_position"); setPosition(null);
           }
         }
@@ -3547,10 +3584,14 @@ function Bot4Strategy({ config }) {
           const qty = Math.floor(budget / price);
           if (qty > 0) {
             addLog(`🔵 매수 ${tk} | ${p.lookbackMin}분 ${drop.toFixed(2)}% | $${price.toFixed(2)} × ${qty}주`);
-            const newPos = { ticker: tk, price, qty, time: new Date().toISOString() };
-            localStorage.setItem("bot4_position", JSON.stringify(newPos));
-            setPosition(newPos);
-            setScanStatus(`${tk} 매수!`);
+            const ex = await detectExchange(tk);
+            const r = await kisOrder("buy", tk, qty, price.toFixed(2), ex);
+            if (r?.rt_cd === "0") {
+              addLog(`✅ 매수 체결! ${tk}`);
+              const newPos = { ticker: tk, price, qty, time: new Date().toISOString() };
+              localStorage.setItem("bot4_position", JSON.stringify(newPos));
+              setPosition(newPos); setScanStatus(`${tk} 매수!`);
+            } else { addLog(`❌ 매수 실패: ${r?.msg1 || ""}`); }
             return;
           }
         }
@@ -3891,10 +3932,15 @@ function Bot2Strategy({ config }) {
       if (!pos && dropRate <= -p.dropPct) {
         const qty = Math.floor(config.budget / currentPrice);
         if (qty > 0) {
-          addLog(`🔵 매수! ${p.lookbackMin}분간 ${dropRate.toFixed(2)}% 하락 | $${currentPrice.toFixed(2)} × ${qty}주`);
-          const newPos = { ticker: config.ticker, price: currentPrice, qty, time: new Date().toISOString() };
-          localStorage.setItem("bot2_position", JSON.stringify(newPos));
-          setPosition(newPos);
+          addLog(`🔵 매수! ${p.lookbackMin}분 ${dropRate.toFixed(2)}% | $${currentPrice.toFixed(2)} × ${qty}주`);
+          const ex = await detectExchange(config.ticker);
+          const r = await kisOrder("buy", config.ticker, qty, currentPrice.toFixed(2), ex);
+          if (r?.rt_cd === "0") {
+            addLog(`✅ 매수 체결!`);
+            const newPos = { ticker: config.ticker, price: currentPrice, qty, time: new Date().toISOString() };
+            localStorage.setItem("bot2_position", JSON.stringify(newPos));
+            setPosition(newPos);
+          } else { addLog(`❌ 매수 실패: ${r?.msg1 || ""}`); }
         }
       }
 
@@ -3906,13 +3952,19 @@ function Bot2Strategy({ config }) {
         else if (elapsed > 60) target = Math.max(p.targetPct * 0.6, p.minTargetPct);
         else if (elapsed > 30) target = Math.max(p.targetPct * 0.8, p.minTargetPct);
         if (pnlPct >= target) {
-          addLog(`🔴 매도! +${pnlPct.toFixed(2)}% (목표 ${target.toFixed(1)}%) | $${currentPrice.toFixed(2)}`);
-          localStorage.removeItem("bot2_position");
-          setPosition(null);
+          addLog(`🔴 매도! +${pnlPct.toFixed(2)}% | $${currentPrice.toFixed(2)}`);
+          const ex = await detectExchange(pos.ticker);
+          const r = await kisOrder("sell", pos.ticker, pos.qty, currentPrice.toFixed(2), ex);
+          if (r?.rt_cd === "0") { addLog(`✅ 매도 체결!`); }
+          else { addLog(`❌ 매도 실패: ${r?.msg1 || ""}`); }
+          localStorage.removeItem("bot2_position"); setPosition(null);
         } else if (pnlPct <= p.stopLossPct) {
-          addLog(`🔻 손절! ${pnlPct.toFixed(2)}% ≤ ${p.stopLossPct}% | $${currentPrice.toFixed(2)}`);
-          localStorage.removeItem("bot2_position");
-          setPosition(null);
+          addLog(`🔻 손절! ${pnlPct.toFixed(2)}% | $${currentPrice.toFixed(2)}`);
+          const ex = await detectExchange(pos.ticker);
+          const r = await kisOrder("sell", pos.ticker, pos.qty, currentPrice.toFixed(2), ex);
+          if (r?.rt_cd === "0") { addLog(`✅ 손절 체결!`); }
+          else { addLog(`❌ 손절 실패: ${r?.msg1 || ""}`); }
+          localStorage.removeItem("bot2_position"); setPosition(null);
         }
       }
     } catch(e) { addLog(`❌ ${e.message}`); }
@@ -4347,9 +4399,21 @@ function Bot5Strategy({ config }) {
           else if (elapsed > 120) target = Math.max(p.targetPct * 0.8, 2.0);
           setLiveData({ status: `${sym} 보유 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`, rsi, price });
 
-          if (pnl >= target) { addLog(`🔴 매도 ${sym} +${pnl.toFixed(2)}%`); localStorage.removeItem("bot5_position"); setPosition(null); return; }
-          if (rsi >= 70 && pnl >= 0.8) { addLog(`🔴 RSI70 익절 ${sym} +${pnl.toFixed(2)}%`); localStorage.removeItem("bot5_position"); setPosition(null); return; }
-          if (pnl <= p.stopLossPct) { addLog(`🔻 손절 ${sym} ${pnl.toFixed(2)}%`); localStorage.removeItem("bot5_position"); setPosition(null); return; }
+          if (pnl >= target) {
+            addLog(`🔴 매도 ${sym} +${pnl.toFixed(2)}%`);
+            const ex = await detectExchange(sym); await kisOrder("sell", sym, pos.qty, price.toFixed(2), ex);
+            localStorage.removeItem("bot5_position"); setPosition(null); return;
+          }
+          if (rsi >= 70 && pnl >= 0.8) {
+            addLog(`🔴 RSI70 익절 ${sym} +${pnl.toFixed(2)}%`);
+            const ex = await detectExchange(sym); await kisOrder("sell", sym, pos.qty, price.toFixed(2), ex);
+            localStorage.removeItem("bot5_position"); setPosition(null); return;
+          }
+          if (pnl <= p.stopLossPct) {
+            addLog(`🔻 손절 ${sym} ${pnl.toFixed(2)}%`);
+            const ex = await detectExchange(sym); await kisOrder("sell", sym, pos.qty, price.toFixed(2), ex);
+            localStorage.removeItem("bot5_position"); setPosition(null); return;
+          }
           return;
         }
 
@@ -4372,10 +4436,14 @@ function Bot5Strategy({ config }) {
             const qty = Math.floor(budget / price);
             if (qty > 0) {
               addLog(`🔵 매수 ${sym} RSI${rsi.toFixed(0)} BB복귀 | $${price.toFixed(2)} × ${qty}주`);
-              const newPos = { ticker: sym, price, qty, time: new Date().toISOString() };
-              localStorage.setItem("bot5_position", JSON.stringify(newPos));
-              setPosition(newPos);
-              setLiveData({ status: `${sym} 매수!`, rsi, price });
+              const ex = await detectExchange(sym);
+              const r = await kisOrder("buy", sym, qty, price.toFixed(2), ex);
+              if (r?.rt_cd === "0") {
+                addLog(`✅ 매수 체결! ${sym}`);
+                const newPos = { ticker: sym, price, qty, time: new Date().toISOString() };
+                localStorage.setItem("bot5_position", JSON.stringify(newPos));
+                setPosition(newPos); setLiveData({ status: `${sym} 매수!`, rsi, price });
+              } else { addLog(`❌ 매수 실패: ${r?.msg1 || ""}`); }
               return;
             }
           }
