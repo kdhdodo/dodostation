@@ -1,11 +1,15 @@
 {
-  "rewrites": [
-    { "source": "/api/yahoo/:path*", "destination": "/api/yahoo/:path*" },
-    { "source": "/api/yahoo1/:path*", "destination": "/api/yahoo1/:path*" },
-    { "source": "/api/yqs/:path*", "destination": "/api/yqs/:path*" },
-    { "source": "/api/kis/:path*", "destination": "/api/kis/:path*" },
-    { "source": "/api/secdata/:path*", "destination": "/api/secdata/:path*" },
-    { "source": "/api/secwww/:path*", "destination": "/api/secwww/:path*" },
-    { "source": "/api/secefts/:path*", "destination": "/api/secefts/:path*" }
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "routes": [
+    { "src": "/api/yahoo/(.*)", "dest": "/api/yahoo/[...path]" },
+    { "src": "/api/yahoo1/(.*)", "dest": "/api/yahoo1/[...path]" },
+    { "src": "/api/yqs/(.*)", "dest": "/api/yqs/[...path]" },
+    { "src": "/api/kis/(.*)", "dest": "/api/kis/[...path]" },
+    { "src": "/api/secdata/(.*)", "dest": "/api/secdata/[...path]" },
+    { "src": "/api/secwww/(.*)", "dest": "/api/secwww/[...path]" },
+    { "src": "/api/secefts/(.*)", "dest": "/api/secefts/[...path]" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
