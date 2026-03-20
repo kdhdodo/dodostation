@@ -1,10 +1,10 @@
 export default async function handler(req, res) {
-  const path = req.query.path?.join("/") || "";
-  const qs = new URLSearchParams(req.query);
-  qs.delete("path");
-  const urls = [
-    `https://query1.finance.yahoo.com/${path}${qs.toString() ? "?" + qs : ""}`,
-    `https://query2.finance.yahoo.com/${path}${qs.toString() ? "?" + qs : ""}`,
+  const url = new URL(req.url, `https://${req.headers.host}`);
+  const path = url.pathname.replace(/^\/api\/yahoo\//, "");
+  const qs = url.search || "";
+  const targets = [
+    `https://query1.finance.yahoo.com/${path}${qs}`,
+    `https://query2.finance.yahoo.com/${path}${qs}`,
   ];
   const headers = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -12,9 +12,9 @@ export default async function handler(req, res) {
     Origin: "https://finance.yahoo.com",
     Referer: "https://finance.yahoo.com/",
   };
-  for (const url of urls) {
+  for (const t of targets) {
     try {
-      const r = await fetch(url, { headers });
+      const r = await fetch(t, { headers });
       if (r.ok) {
         const data = await r.text();
         res.setHeader("Content-Type", r.headers.get("content-type") || "application/json");
