@@ -26,13 +26,14 @@ async function getToken() {
 export default async function handler(req, res) {
   const path = req.query.path?.join("/") || "";
 
-  // 디버그: 환경변수 확인
-  if (path === "debug") {
+  // 디버그
+  if (path === "debug" || !path) {
     return res.status(200).json({
+      path,
+      query: req.query,
       hasAppkey: !!APPKEY,
       hasAppsecret: !!APPSECRET,
-      hasAccount: !!ACCOUNT,
-      appkeyFirst3: APPKEY ? APPKEY.slice(0, 3) + "..." : "없음"
+      url: req.url,
     });
   }
 
