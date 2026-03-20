@@ -2207,16 +2207,18 @@ function BalanceTab() {
   );
 }
 
+const EXCHANGE_MAP = { NMS: "NASD", NGM: "NASD", NCM: "NASD", NYQ: "NYSE", ASE: "AMEX", PCX: "AMEX", BTS: "AMEX" };
 function QuickOrderTest() {
   const [ticker, setTicker] = useState("AAPL");
   const [qty, setQty] = useState(1);
   const [price, setPrice] = useState("");
   const [currentPrice, setCurrentPrice] = useState(null);
+  const [exchange, setExchange] = useState("NASD");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
 
-  // 현재가 조회
+  // 현재가 + 거래소 조회
   const fetchPrice = async () => {
     if (!ticker) return;
     setFetching(true);
@@ -2224,12 +2226,17 @@ function QuickOrderTest() {
       const res = await fetch(`/api/yahoo/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`);
       if (res.ok) {
         const json = await res.json();
-        const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v != null) || [];
+        const r = json?.chart?.result?.[0];
+        const closes = r?.indicators?.quote?.[0]?.close?.filter(v => v != null) || [];
         if (closes.length) {
           const p = closes[closes.length - 1];
           setCurrentPrice(p);
           setPrice(p.toFixed(2));
         }
+        // 거래소 자동 판별
+        const exName = r?.meta?.exchangeName || "";
+        const mapped = EXCHANGE_MAP[exName] || "NASD";
+        setExchange(mapped);
       }
     } catch {}
     setFetching(false);
@@ -2244,7 +2251,7 @@ function QuickOrderTest() {
     if (!confirmed) return;
     setLoading(true);
     setResult(null);
-    const json = await kisOrder(side, ticker, qty, price);
+    const json = await kisOrder(side, ticker, qty, price, exchange);
     setResult(json);
     setLoading(false);
   };
@@ -2262,7 +2269,7 @@ function QuickOrderTest() {
           <input type="number" value={qty} onChange={e => setQty(parseInt(e.target.value)||1)} min={1} style={{ width:50, background:"#0d0f14", border:"1px solid #333", borderRadius:4, color:"#fff", fontSize:12, padding:"6px 8px" }} />
         </div>
         <div>
-          <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>가격 {currentPrice ? `(현재 $${currentPrice.toFixed(2)})` : ""}</div>
+          <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>가격 {currentPrice ? `(현재 $${currentPrice.toFixed(2)} | ${exchange})` : ""}</div>
           <div style={{ display:"flex", gap:4 }}>
             <input value={price} onChange={e => setPrice(e.target.value)} placeholder="가격" style={{ width:80, background:"#0d0f14", border:"1px solid #333", borderRadius:4, color:"#fff", fontSize:12, padding:"6px 8px" }} />
             <button onClick={fetchPrice} disabled={fetching} style={{ background:"#1e2130", border:"1px solid #333", borderRadius:4, color:"#f5c518", fontSize:10, padding:"4px 8px", cursor:"pointer" }}>{fetching ? "..." : "현재가"}</button>
