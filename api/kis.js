@@ -27,10 +27,19 @@ export default async function handler(req, res) {
   // 토큰 발급
   if (path === "oauth2/tokenP") {
     try {
-      const token = await getToken();
-      if (token) return res.status(200).json({ access_token: token, token_type: "Bearer" });
-      return res.status(500).json({ error: "Token failed" });
-    } catch(e) { return res.status(500).json({ error: e.message }); }
+      const tRes = await fetch("https://openapi.koreainvestment.com:9443/oauth2/tokenP", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grant_type: "client_credentials", appkey: APPKEY, appsecret: APPSECRET }),
+      });
+      const tJson = await tRes.json();
+      if (tJson.access_token) {
+        _token = tJson.access_token;
+        _tokenExp = Date.now() + 23 * 3600000;
+        return res.status(200).json({ access_token: _token, token_type: "Bearer" });
+      }
+      return res.status(500).json({ error: "Token failed", kisResponse: tJson });
+    } catch(e) { return res.status(500).json({ error: e.message, stack: e.stack?.slice(0, 200) }); }
   }
 
   // 일반 API
