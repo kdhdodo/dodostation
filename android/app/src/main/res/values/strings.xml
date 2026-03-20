@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Dodo Station</string>
+    <string name="title_activity_main">Dodo Station</string>
+    <string name="package_name">io.dodostation.app</string>
+    <string name="custom_url_scheme">io.dodostation.app</string>
+</resources>

@@ -1,0 +1,11 @@
+{
+  "rewrites": [
+    { "source": "/api/yahoo/:path*", "destination": "/api/yahoo/:path*" },
+    { "source": "/api/yahoo1/:path*", "destination": "/api/yahoo1/:path*" },
+    { "source": "/api/yqs/:path*", "destination": "/api/yqs/:path*" },
+    { "source": "/api/kis/:path*", "destination": "/api/kis/:path*" },
+    { "source": "/api/secdata/:path*", "destination": "/api/secdata/:path*" },
+    { "source": "/api/secwww/:path*", "destination": "/api/secwww/:path*" },
+    { "source": "/api/secefts/:path*", "destination": "/api/secefts/:path*" }
+  ]
+}

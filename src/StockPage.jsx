@@ -27,26 +27,35 @@ export default function StockPage() {
   const [watchlist, setWatchlist] = useState([]);
   const [wlLoading, setWlLoading] = useState(true);
   const [addingMonitor, setAddingMonitor] = useState(false);
+  const [mobileTab, setMobileTab] = useState("chart");
   const searchTimeout = useRef(null);
 
   useEffect(() => { loadWatchlist(); }, []);
 
   async function loadWatchlist() {
     setWlLoading(true);
-    const { data } = await supabase.from("stock_watchlist").select("*").order("added_at", { ascending: false });
-    if (!data || data.length === 0) { setWatchlist([]); setWlLoading(false); return; }
-    const updated = await Promise.all(data.map(async (item) => {
-      try {
-        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${item.ticker}?range=5d&interval=1d`)}`);
-        const json = await res.json();
-        const closes = (json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(c => c != null);
-        const cur = closes[closes.length - 1];
-        const prev = closes.length >= 2 ? closes[closes.length - 2] : cur;
-        return { ...item, currentPrice: cur, change: cur && prev ? ((cur - prev) / prev * 100) : 0 };
-      } catch { return { ...item, currentPrice: null, change: 0 }; }
-    }));
-    setWatchlist(updated);
-    setWlLoading(false);
+    try {
+      const { data } = await supabase.from("stock_watchlist").select("*").order("added_at", { ascending: false });
+      if (!data || data.length === 0) { setWatchlist([]); setWlLoading(false); return; }
+      // 먼저 목록을 즉시 표시
+      setWatchlist(data.map(item => ({ ...item, currentPrice: null, change: 0 })));
+      setWlLoading(false);
+      // 가격은 백그라운드에서 업데이트
+      const updated = await Promise.all(data.map(async (item) => {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000);
+          const res = await fetch(`/api/yahoo1/v8/finance/chart/${encodeURIComponent(item.ticker)}?range=5d&interval=1d`, { signal: controller.signal });
+          clearTimeout(timeout);
+          const json = await res.json();
+          const closes = (json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(c => c != null);
+          const cur = closes[closes.length - 1];
+          const prev = closes.length >= 2 ? closes[closes.length - 2] : cur;
+          return { ...item, currentPrice: cur, change: cur && prev ? ((cur - prev) / prev * 100) : 0 };
+        } catch { return { ...item, currentPrice: null, change: 0 }; }
+      }));
+      setWatchlist(updated);
+    } catch { setWatchlist([]); setWlLoading(false); }
   }
 
   // 검색 자동완성
@@ -56,13 +65,19 @@ export default function StockPage() {
     if (val.trim().length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
     searchTimeout.current = setTimeout(async () => {
       try {
-        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v1/finance/search?q=${val.trim()}&quotesCount=8&newsCount=0`)}`);
-        const data = await res.json();
+        const q = val.trim();
+        let data;
+        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        const searchUrl = isLocal
+          ? `/api/yahoo/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`
+          : `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query2.finance.yahoo.com/v1/finance/search?q=${q}&quotesCount=8&newsCount=0`)}`;
+        const res = await fetch(searchUrl);
+        data = await res.json();
         const quotes = (data.quotes || []).map(q => ({ symbol: q.symbol, name: q.shortname || q.longname || "", type: q.quoteType || "", exchange: q.exchDisp || "" }));
         setSuggestions(quotes);
         setShowSuggestions(quotes.length > 0);
       } catch { setSuggestions([]); }
-    }, 300);
+    }, 200);
   }
 
   function selectTicker(symbol) {
@@ -102,18 +117,32 @@ export default function StockPage() {
     loadWatchlist();
   }
 
-  async function handleRemove(e, ticker) {
+  async function handleRemove(e, t) {
     e.stopPropagation();
-    await supabase.from("stock_watchlist").delete().eq("ticker", ticker);
-    setWatchlist(w => w.filter(i => i.ticker !== ticker));
+    await supabase.from("stock_watchlist").delete().eq("ticker", t);
+    loadWatchlist();
   }
 
   function handleKey(e) { if (e.key === "Enter") loadChart(); }
 
   return (
-    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 16, padding: isMobile ? "12px 12px" : "16px 24px", minHeight: "calc(100vh - 112px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "calc(100vh - 56px)" }}>
+      {/* 모바일 탭 */}
+      {isMobile && (
+        <div style={{ display: "flex", borderBottom: "1px solid #1a1a1a", background: "#0a0a0a" }}>
+          {[{ id: "chart", label: "차트" }, { id: "monitor", label: "모니터링" }].map(t => (
+            <button key={t.id} onClick={() => setMobileTab(t.id)} style={{
+              flex: 1, padding: "10px 0", background: "none", border: "none",
+              borderBottom: mobileTab === t.id ? "2px solid #fff" : "2px solid transparent",
+              color: mobileTab === t.id ? "#fff" : "#555",
+              fontSize: "0.85rem", fontWeight: mobileTab === t.id ? 600 : 400, cursor: "pointer",
+            }}>{t.label}</button>
+          ))}
+        </div>
+      )}
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 16, padding: isMobile ? "12px 12px" : "16px 24px", flex: 1 }}>
       {/* 왼쪽: 검색 + 차트 + 분석 */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, display: isMobile && mobileTab === "monitor" ? "none" : "block" }}>
         {/* 검색 */}
         <div style={{ position: "relative", display: "flex", gap: 10, marginBottom: 16 }}>
           <div style={{ flex: 1, position: "relative" }}>
@@ -148,18 +177,23 @@ export default function StockPage() {
         {stockData && (
           <>
             <TradingViewChart symbol={stockData.ticker} />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-              <Indicator label="RSI (14)" value={stockData.rsi[stockData.rsi.length - 1]?.toFixed(1)}
-                color={stockData.rsi[stockData.rsi.length - 1] > 70 ? "#ff6b6b" : stockData.rsi[stockData.rsi.length - 1] < 30 ? "#4ecdc4" : "#8890a4"}
-                note={stockData.rsi[stockData.rsi.length - 1] > 70 ? "과매수" : stockData.rsi[stockData.rsi.length - 1] < 30 ? "과매도" : "중립"} />
-              <Indicator label="MACD" value={stockData.macd.macdLine[stockData.macd.macdLine.length - 1]?.toFixed(2)}
-                color={stockData.macd.macdLine[stockData.macd.macdLine.length - 1] > stockData.macd.signal[stockData.macd.signal.length - 1] ? "#4ecdc4" : "#ff6b6b"}
-                note={stockData.macd.macdLine[stockData.macd.macdLine.length - 1] > stockData.macd.signal[stockData.macd.signal.length - 1] ? "매수 신호" : "매도 신호"} />
-              <Indicator label="MA5/MA20"
-                value={stockData.ma5[stockData.ma5.length - 1] > stockData.ma20[stockData.ma20.length - 1] ? "골든크로스" : "데드크로스"}
-                color={stockData.ma5[stockData.ma5.length - 1] > stockData.ma20[stockData.ma20.length - 1] ? "#4ecdc4" : "#ff6b6b"}
-                note={`${formatPrice(stockData.ma5[stockData.ma5.length - 1], stockData.ticker)} / ${formatPrice(stockData.ma20[stockData.ma20.length - 1], stockData.ticker)}`} />
-            </div>
+            {stockData.prices.length === 0 && (
+              <div style={{ color: "#555", fontSize: 12, marginBottom: 12, textAlign: "center" }}>지표 데이터 미지원 종목 (차트만 표시)</div>
+            )}
+            {stockData.prices.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                <Indicator label="RSI (14)" value={stockData.rsi[stockData.rsi.length - 1]?.toFixed(1)}
+                  color={stockData.rsi[stockData.rsi.length - 1] > 70 ? "#ff6b6b" : stockData.rsi[stockData.rsi.length - 1] < 30 ? "#4ecdc4" : "#8890a4"}
+                  note={stockData.rsi[stockData.rsi.length - 1] > 70 ? "과매수" : stockData.rsi[stockData.rsi.length - 1] < 30 ? "과매도" : "중립"} />
+                <Indicator label="MACD" value={stockData.macd.macdLine[stockData.macd.macdLine.length - 1]?.toFixed(2)}
+                  color={stockData.macd.macdLine[stockData.macd.macdLine.length - 1] > stockData.macd.signal[stockData.macd.signal.length - 1] ? "#4ecdc4" : "#ff6b6b"}
+                  note={stockData.macd.macdLine[stockData.macd.macdLine.length - 1] > stockData.macd.signal[stockData.macd.signal.length - 1] ? "매수 신호" : "매도 신호"} />
+                <Indicator label="MA5/MA20"
+                  value={stockData.ma5[stockData.ma5.length - 1] > stockData.ma20[stockData.ma20.length - 1] ? "골든크로스" : "데드크로스"}
+                  color={stockData.ma5[stockData.ma5.length - 1] > stockData.ma20[stockData.ma20.length - 1] ? "#4ecdc4" : "#ff6b6b"}
+                  note={`${formatPrice(stockData.ma5[stockData.ma5.length - 1], stockData.ticker)} / ${formatPrice(stockData.ma20[stockData.ma20.length - 1], stockData.ticker)}`} />
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
               <button onClick={handleAnalyze} disabled={analyzing} style={{
                 background: analyzing ? "#333" : "linear-gradient(135deg,#7c5cfc,#4a9eff)",
@@ -191,7 +225,7 @@ export default function StockPage() {
       </div>
 
       {/* 오른쪽: 모니터링 */}
-      <div style={{ width: isMobile ? "100%" : 260, flexShrink: 0 }}>
+      <div style={{ width: isMobile ? "100%" : 260, flexShrink: 0, display: isMobile && mobileTab === "chart" ? "none" : "block" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#ccc" }}>모니터링</div>
           <button onClick={loadWatchlist} disabled={wlLoading} style={{
@@ -236,15 +270,26 @@ export default function StockPage() {
         </div>
       </div>
     </div>
+    </div>
   );
 }
 
 // ════════════════════════════════════
 // 공통 컴포넌트
 // ════════════════════════════════════
+function toTVSymbol(sym) {
+  const map = {
+    "GC=F": "XAUUSD", "SI=F": "XAGUSD", "CL=F": "USOIL",
+    "NG=F": "NATURALGAS", "DX-Y.NYB": "DXY",
+    "BTC-USD": "BTCUSD", "ETH-USD": "ETHUSD",
+  };
+  return map[sym.toUpperCase()] || sym;
+}
+
 function TradingViewChart({ symbol }) {
   const isMobile = useMobile();
   const containerRef = useRef(null);
+  const tvSymbol = toTVSymbol(symbol);
   useEffect(() => {
     if (!containerRef.current) return;
     containerRef.current.innerHTML = "";
@@ -253,13 +298,13 @@ function TradingViewChart({ symbol }) {
     script.type = "text/javascript";
     script.async = true;
     script.innerHTML = JSON.stringify({
-      autosize: true, symbol, interval: "D", timezone: "Asia/Seoul", theme: "dark", style: "1", locale: "kr",
+      autosize: true, symbol: tvSymbol, interval: "D", timezone: "Asia/Seoul", theme: "dark", style: "1", locale: "kr",
       backgroundColor: "rgba(17, 20, 28, 1)", gridColor: "rgba(30, 33, 48, 0.6)",
       allow_symbol_change: false, calendar: false, hide_top_toolbar: false,
       studies: ["RSI@tv-basicstudies", "MACD@tv-basicstudies"],
     });
     containerRef.current.appendChild(script);
-  }, [symbol]);
+  }, [tvSymbol]);
 
   return (
     <div style={{ background: "#11141c", borderRadius: 10, border: "1px solid #1e2130", overflow: "hidden", marginBottom: 12, height: isMobile ? 500 : 1100 }}>
@@ -306,16 +351,21 @@ function getPricePrefix(ticker) {
 }
 
 async function fetchStockData(t) {
-  const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${t}?range=3mo&interval=1d`)}`);
-  if (!res.ok) throw new Error("티커를 찾을 수 없습니다.");
+  const res = await fetch(`/api/yahoo/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=3mo`);
+  if (!res.ok) throw new Error("티커를 찾을 수 없습니다.\n예: AAPL, TSLA, GC=F, BTC-USD");
   const json = await res.json();
-  const chart = json?.chart?.result?.[0];
-  if (!chart) throw new Error("티커를 찾을 수 없습니다.\n예: AAPL, TSLA, GC=F, BTC-USD");
-  const timestamps = chart.timestamp || [];
-  const quote = chart.indicators?.quote?.[0] || {};
-  const prices = timestamps.map((ts, i) => ({ date: new Date(ts * 1000).toISOString().slice(0, 10), close: quote.close?.[i] })).filter(p => p.close != null).slice(-60);
+  const result = json?.chart?.result?.[0];
+  if (!result) throw new Error("티커를 찾을 수 없습니다.\n예: AAPL, TSLA, GC=F, BTC-USD");
+  const timestamps = result.timestamp || [];
+  const rawCloses = result.indicators?.quote?.[0]?.close || [];
+  const prices = timestamps.map((ts, i) => ({
+    date: new Date(ts * 1000).toISOString().slice(0, 10),
+    close: rawCloses[i],
+  })).filter(p => p.close != null && !isNaN(p.close)).slice(-60);
+  if (prices.length < 5) throw new Error("티커를 찾을 수 없습니다.\n예: AAPL, TSLA, GC=F, BTC-USD");
   const closes = prices.map(p => p.close);
-  return { ticker: t, prices, lastPrice: closes[closes.length - 1], prefix: getPricePrefix(t), ma5: movingAvg(closes, 5), ma20: movingAvg(closes, 20), rsi: calcRSI(closes, 14), macd: calcMACD(closes) };
+  const lastPrice = result.meta?.regularMarketPrice || closes[closes.length - 1];
+  return { ticker: t, prices, lastPrice, prefix: getPricePrefix(t), ma5: movingAvg(closes, 5), ma20: movingAvg(closes, 20), rsi: calcRSI(closes, 14), macd: calcMACD(closes) };
 }
 
 function buildAnalysisData(data) {
