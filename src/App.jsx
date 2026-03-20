@@ -2043,17 +2043,34 @@ function RSIMap() {
 }
 
 // ── KIS API (키는 서버사이드에서 관리) ──
-async function kisAPI(path, params = {}, trId = "") {
+async function kisAPI(path, params = {}, trId = "", postBody = null) {
   const url = new URL(`/api/kis${path}`, window.location.origin);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  if (!postBody) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   try {
     const res = await fetch(url, {
-      headers: { tr_id: trId }
+      method: postBody ? "POST" : "GET",
+      headers: { tr_id: trId, ...(postBody ? { "Content-Type": "application/json" } : {}) },
+      ...(postBody ? { body: JSON.stringify(postBody) } : {}),
     });
     const json = await res.json();
     if (json.rt_cd === "1") console.warn(`[KIS] ${trId} error:`, json.msg1);
     return json;
   } catch(e) { console.warn("[KIS] fetch error:", e); return null; }
+}
+
+async function kisOrder(side, ticker, qty, price = "0", exchange = "NASD") {
+  const trId = side === "buy" ? "TTTT1002U" : "TTTT1006U";
+  return kisAPI("/uapi/overseas-stock/v1/trading/order", {}, trId, {
+    CANO: "", ACNT_PRDT_CD: "",
+    OVRS_EXCG_CD: exchange,
+    PDNO: ticker,
+    ORD_QTY: String(qty),
+    OVRS_ORD_UNPR: String(price),
+    CTAC_TLNO: "", MGCO_APTM_ODNO: "",
+    SLL_TYPE: side === "sell" ? "00" : "",
+    ORD_SVR_DVSN_CD: "0",
+    ORD_DVSN: "00",
+  });
 }
 
 async function fetchOverseasBalance() {
@@ -2183,11 +2200,71 @@ function BalanceTab() {
       {!loading && !cash && (
         <div style={{ color:"#f44336", fontSize:12 }}>KIS API 연결 실패. APP Key를 확인해주세요.</div>
       )}
+
+      {/* 바로구매 테스트 */}
+      <QuickOrderTest />
+    </div>
+  );
+}
+
+function QuickOrderTest() {
+  const [ticker, setTicker] = useState("AAPL");
+  const [qty, setQty] = useState(1);
+  const [price, setPrice] = useState("");
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const placeOrder = async (side) => {
+    if (!ticker || qty <= 0) return;
+    const confirmed = confirm(`${side === "buy" ? "매수" : "매도"} 주문\n종목: ${ticker}\n수량: ${qty}주\n${price ? `가격: $${price} (지정가)` : "시장가"}\n\n진행할까요?`);
+    if (!confirmed) return;
+    setLoading(true);
+    setResult(null);
+    const json = await kisOrder(side, ticker, qty, price || "0");
+    setResult(json);
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ marginTop:20, background:"#11141c", borderRadius:10, padding:16 }}>
+      <div style={{ fontSize:13, fontWeight:600, color:"#fff", marginBottom:12 }}>주문 테스트</div>
+      <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+        <div>
+          <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>종목</div>
+          <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} style={{ width:80, background:"#0d0f14", border:"1px solid #333", borderRadius:4, color:"#fff", fontSize:12, padding:"6px 8px" }} />
+        </div>
+        <div>
+          <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>수량</div>
+          <input type="number" value={qty} onChange={e => setQty(parseInt(e.target.value)||1)} min={1} style={{ width:50, background:"#0d0f14", border:"1px solid #333", borderRadius:4, color:"#fff", fontSize:12, padding:"6px 8px" }} />
+        </div>
+        <div>
+          <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>가격 (빈칸=시장가)</div>
+          <input value={price} onChange={e => setPrice(e.target.value)} placeholder="시장가" style={{ width:80, background:"#0d0f14", border:"1px solid #333", borderRadius:4, color:"#fff", fontSize:12, padding:"6px 8px" }} />
+        </div>
+      </div>
+      <div style={{ display:"flex", gap:8 }}>
+        <button onClick={() => placeOrder("buy")} disabled={loading} style={{ flex:1, background:"#4caf50", border:"none", borderRadius:6, padding:"10px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>{loading ? "주문 중..." : "매수"}</button>
+        <button onClick={() => placeOrder("sell")} disabled={loading} style={{ flex:1, background:"#f44336", border:"none", borderRadius:6, padding:"10px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>{loading ? "주문 중..." : "매도"}</button>
+      </div>
+      {result && (
+        <div style={{ marginTop:10, background:"#0d0f14", borderRadius:6, padding:10, fontSize:11 }}>
+          <div style={{ color: result.rt_cd === "0" ? "#4caf50" : "#f44336", fontWeight:600, marginBottom:4 }}>
+            {result.rt_cd === "0" ? "✅ 주문 성공!" : `❌ ${result.msg1 || result.error || "주문 실패"}`}
+          </div>
+          <pre style={{ color:"#888", fontSize:9, whiteSpace:"pre-wrap", margin:0 }}>{JSON.stringify(result, null, 2)}</pre>
+        </div>
+      )}
     </div>
   );
 }
 
 function LiveMonitor({ tickers }) {
+  const intervals = [
+    { id: "1m", label: "1분", range: "1d" },
+    { id: "5m", label: "5분", range: "5d" },
+    { id: "15m", label: "15분", range: "5d" },
+  ];
+  const [iv, setIv] = useState("1m");
   const [data, setData] = useState({});
   const [loading, setLoading] = useState(true);
 
@@ -2203,36 +2280,43 @@ function LiveMonitor({ tickers }) {
   useEffect(() => {
     if (!tickers.length) return;
     let cancelled = false;
+    const ivConfig = intervals.find(i => i.id === iv);
     const fetchAll = async () => {
       setLoading(true);
       const result = {};
       for (const t of tickers.slice(0, 10)) {
         try {
-          const res = await fetch(`/api/yahoo/v8/finance/chart/${encodeURIComponent(t)}?interval=1m&range=1d`);
+          const res = await fetch(`/api/yahoo/v8/finance/chart/${encodeURIComponent(t)}?interval=${ivConfig.id}&range=${ivConfig.range}`);
           if (!res.ok) continue;
           const json = await res.json();
           const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v != null) || [];
           if (closes.length < 2) continue;
           const price = closes[closes.length - 1];
-          const prevPrice = closes[closes.length - 2];
           const change = (price - closes[0]) / closes[0] * 100;
           const rsi = calcRSI9(closes);
-          result[t] = { price, rsi, change, prevPrice };
+          result[t] = { price, rsi, change };
         } catch {}
       }
       if (!cancelled) { setData(result); setLoading(false); }
     };
     fetchAll();
-    const iv = setInterval(fetchAll, 60000);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, [tickers.join(",")]);
+    const timer = setInterval(fetchAll, 60000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [tickers.join(","), iv]);
 
   if (!tickers.length) return null;
-  if (loading) return <div style={{ color:"#333", fontSize:11, padding:8 }}>실시간 데이터 로딩...</div>;
 
   return (
     <div style={{ marginBottom:12 }}>
-      <div style={{ fontSize:11, color:"#555", marginBottom:6 }}>실시간 모니터링 (1분마다 갱신)</div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+        <span style={{ fontSize:11, color:"#555" }}>실시간 모니터링 (1분 갱신)</span>
+        <div style={{ display:"flex", background:"#11141c", borderRadius:4, overflow:"hidden" }}>
+          {intervals.map(i => (
+            <button key={i.id} onClick={() => setIv(i.id)} style={{ background: iv === i.id ? "#1e2130" : "transparent", border:"none", color: iv === i.id ? "#f5c518" : "#555", fontSize:10, fontWeight:600, padding:"3px 8px", cursor:"pointer" }}>{i.label}</button>
+          ))}
+        </div>
+      </div>
+      {loading ? <div style={{ color:"#333", fontSize:11, padding:8 }}>로딩...</div> : (
       <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
         {tickers.map(t => {
           const d = data[t];
@@ -2251,6 +2335,7 @@ function LiveMonitor({ tickers }) {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
@@ -4236,8 +4321,19 @@ function Bot5Strategy({ config }) {
 
         // 매수 체크 (RSI 반등 + BB 복귀)
         if (!pos) {
-          const c1 = prevRsi <= p.rsiBuy && rsi >= p.rsiEntry;
-          const c2 = closes[closes.length - 2] <= prevBB?.lower && price > bb.lower;
+          const rsiBelow = rsi <= p.rsiBuy;
+          const rsiRebounded = prevRsi <= p.rsiBuy && rsi >= p.rsiEntry;
+          const bbBelow = price <= bb.lower;
+          const bbRecovered = closes[closes.length - 2] <= prevBB?.lower && price > bb.lower;
+          const c1 = rsiRebounded;
+          const c2 = bbRecovered;
+          // 조건 감지 로그
+          if (rsiBelow) addLog(`👀 ${sym} RSI ${rsi.toFixed(1)} ≤ ${p.rsiBuy} 감지 | $${price.toFixed(2)}`);
+          if (rsiRebounded) addLog(`👀 ${sym} RSI 반등! ${prevRsi.toFixed(1)}→${rsi.toFixed(1)} (${p.rsiBuy}↓→${p.rsiEntry}↑)`);
+          if (bbBelow) addLog(`👀 ${sym} BB 하단 이탈 | $${price.toFixed(2)} < $${bb.lower.toFixed(2)}`);
+          if (bbRecovered) addLog(`👀 ${sym} BB 하단 복귀! $${price.toFixed(2)} > $${bb.lower.toFixed(2)}`);
+          if (c1 && !c2) addLog(`⏳ ${sym} RSI 조건 ✓ BB 조건 ✗ — BB 복귀 대기`);
+          if (!c1 && c2) addLog(`⏳ ${sym} RSI 조건 ✗ BB 조건 ✓ — RSI 반등 대기`);
           if (c1 && c2) {
             const qty = Math.floor(budget / price);
             if (qty > 0) {

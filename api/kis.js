@@ -60,10 +60,16 @@ export default async function handler(req, res) {
     };
     if (req.headers.tr_id) headers.tr_id = req.headers.tr_id;
 
+    // POST body에 계좌번호 자동 주입
+    let body = req.body || {};
+    if (req.method === "POST" && ACCOUNT) {
+      if (!body.CANO || body.CANO === "") body.CANO = ACCOUNT;
+      if (!body.ACNT_PRDT_CD || body.ACNT_PRDT_CD === "") body.ACNT_PRDT_CD = ACCOUNT_CD || "01";
+    }
     const r = await fetch(target, {
       method: req.method,
       headers,
-      ...(req.method === "POST" ? { body: JSON.stringify(req.body) } : {}),
+      ...(req.method === "POST" ? { body: JSON.stringify(body) } : {}),
     });
     const data = await r.text();
     res.setHeader("Content-Type", r.headers.get("content-type") || "application/json");
