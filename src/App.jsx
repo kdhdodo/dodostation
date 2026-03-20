@@ -805,7 +805,7 @@ function BacktestPanel({ symbol, currentScore, goldenRange, onGoldenFound }) {
       for (let j=1; j<=hd; j++) { if (daily[idx+j]?.close) futureCloses.push(daily[idx+j].close); }
       if (!futureCloses.length) return null;
       const avgClose = futureCloses.reduce((s,v)=>s+v,0)/futureCloses.length;
-      const ret = ((avgClose - parseFloat(buyPrice)) / parseFloat(buyPrice)) * 100;
+      const ret = Math.max(-99, Math.min(100, ((avgClose - parseFloat(buyPrice)) / parseFloat(buyPrice)) * 100));
       return { date, score, buyPrice, avgClose: avgClose.toFixed(2), ret: ret.toFixed(2) };
     }).filter(Boolean);
 
@@ -846,7 +846,8 @@ function BacktestPanel({ symbol, currentScore, goldenRange, onGoldenFound }) {
         const wKeys=Object.keys(wMap).map(Number).sort((a,b)=>a-b);
         const mKeys=Object.keys(mMap).map(Number).sort((a,b)=>a-b);
         function getLv(ts,keys,mp){let lo=0,hi=keys.length-1,res=null;while(lo<=hi){const mid=(lo+hi)>>1;if(keys[mid]<=ts){res=keys[mid];lo=mid+1;}else hi=mid-1;}return res!=null?mp[res]:null;}
-        const daily = timestamps.map((ts,i)=>({ts,close:closes[i],rsi:dRsi[i]})).filter(d=>d.close!=null&&d.rsi!=null);
+        const threeYearsAgo = Date.now() / 1000 - 3 * 365 * 86400;
+        const daily = timestamps.map((ts,i)=>({ts,close:closes[i],rsi:dRsi[i]})).filter(d=>d.close!=null&&d.rsi!=null&&d.ts>=threeYearsAgo);
         dailyRef.current = daily;
         const scoredBase = [];
         for(let i=0;i<daily.length-1;i++){
