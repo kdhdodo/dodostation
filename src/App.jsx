@@ -2112,7 +2112,10 @@ async function fetchOverseasBalance() {
       });
     }
   }
-  return all;
+  // 중복 제거 (같은 ticker는 첫번째만)
+  const seen = new Set();
+  const unique = all.filter(item => { if (seen.has(item.ticker)) return false; seen.add(item.ticker); return true; });
+  return unique;
 }
 
 function TradePage() {
