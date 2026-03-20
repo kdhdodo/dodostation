@@ -2187,6 +2187,74 @@ function BalanceTab() {
   );
 }
 
+function LiveMonitor({ tickers }) {
+  const [data, setData] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  const calcRSI9 = (closes) => {
+    if (closes.length < 10) return null;
+    let ag = 0, al = 0;
+    for (let i = 1; i <= 9; i++) { const d = closes[i] - closes[i-1]; if (d > 0) ag += d; else al -= d; }
+    ag /= 9; al /= 9;
+    for (let i = 10; i < closes.length; i++) { const d = closes[i] - closes[i-1]; ag = (ag*8+(d>0?d:0))/9; al = (al*8+(d<0?-d:0))/9; }
+    return al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+  };
+
+  useEffect(() => {
+    if (!tickers.length) return;
+    let cancelled = false;
+    const fetchAll = async () => {
+      setLoading(true);
+      const result = {};
+      for (const t of tickers.slice(0, 10)) {
+        try {
+          const res = await fetch(`/api/yahoo/v8/finance/chart/${encodeURIComponent(t)}?interval=1m&range=1d`);
+          if (!res.ok) continue;
+          const json = await res.json();
+          const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v != null) || [];
+          if (closes.length < 2) continue;
+          const price = closes[closes.length - 1];
+          const prevPrice = closes[closes.length - 2];
+          const change = (price - closes[0]) / closes[0] * 100;
+          const rsi = calcRSI9(closes);
+          result[t] = { price, rsi, change, prevPrice };
+        } catch {}
+      }
+      if (!cancelled) { setData(result); setLoading(false); }
+    };
+    fetchAll();
+    const iv = setInterval(fetchAll, 60000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [tickers.join(",")]);
+
+  if (!tickers.length) return null;
+  if (loading) return <div style={{ color:"#333", fontSize:11, padding:8 }}>실시간 데이터 로딩...</div>;
+
+  return (
+    <div style={{ marginBottom:12 }}>
+      <div style={{ fontSize:11, color:"#555", marginBottom:6 }}>실시간 모니터링 (1분마다 갱신)</div>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+        {tickers.map(t => {
+          const d = data[t];
+          if (!d) return <div key={t} style={{ background:"#11141c", borderRadius:6, padding:"6px 10px", fontSize:10, color:"#333" }}>{t} -</div>;
+          const rsiColor = d.rsi <= 30 ? "#4caf50" : d.rsi >= 70 ? "#f44336" : "#fff";
+          const changeColor = d.change >= 0 ? "#4caf50" : "#f44336";
+          return (
+            <div key={t} style={{ background:"#11141c", borderRadius:6, padding:"8px 10px", minWidth:100 }}>
+              <div style={{ color:"#f5c518", fontSize:11, fontWeight:700 }}>{t}</div>
+              <div style={{ color:"#fff", fontSize:13, fontWeight:700 }}>${d.price.toFixed(2)}</div>
+              <div style={{ display:"flex", gap:6, fontSize:10, marginTop:2 }}>
+                <span style={{ color: rsiColor, fontWeight:600 }}>RSI {d.rsi?.toFixed(0) || "-"}</span>
+                <span style={{ color: changeColor }}>{d.change >= 0 ? "+" : ""}{d.change.toFixed(2)}%</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function BotTab({ botId }) {
   const isMulti = true;
   const [config, setConfig] = useState(() => {
@@ -2304,7 +2372,10 @@ function BotTab({ botId }) {
         }}>초기화</button>}
       </div>
 
-      {/* BOT1 전략 패널 */}
+      {/* 실시간 모니터링 */}
+      {config && <LiveMonitor tickers={config.tickers || (config.ticker ? [config.ticker] : [])} />}
+
+      {/* BOT 전략 패널 */}
       {config && botId === "bot1" && <Bot1Strategy config={config} />}
       {config && botId === "bot2" && <Bot2Strategy config={config} />}
       {config && botId === "bot3" && <Bot3Strategy config={config} />}
@@ -2420,6 +2491,10 @@ function Bot1Strategy({ config }) {
       const hitAbove70 = recentRsi.some(r => r >= p.sellTrigger);
 
       setRsiData({ rsi: currentRsi.toFixed(1), price: currentPrice, status: simModeRef.current ? "시뮬레이션" : "실행 중", hitBelow35, hitAbove70 });
+
+      // 조건 감지 로그
+      if (hitBelow35 && !hitAbove70) addLog(`👀 RSI ${currentRsi.toFixed(1)} | buyTrigger ${p.buyTrigger} 감지 | $${currentPrice.toFixed(2)}`);
+      if (hitAbove70) addLog(`👀 RSI ${currentRsi.toFixed(1)} | sellTrigger ${p.sellTrigger} 감지 | $${currentPrice.toFixed(2)}`);
 
       const pos = JSON.parse(localStorage.getItem("bot1_position"));
 
@@ -2919,6 +2994,11 @@ function Bot3Strategy({ config }) {
       const pnlPct = pos ? (currentPrice - pos.price) / pos.price * 100 : null;
 
       setLiveData({ rsi: currentRsi, price: currentPrice, status: "실행 중", pnlPct });
+
+      // 조건 감지 로그
+      if (currentRsi <= p.rsiBuy) addLog(`👀 RSI ${currentRsi.toFixed(1)} ≤ ${p.rsiBuy} 감지! $${currentPrice.toFixed(2)}`);
+      if (pos && pnlPct >= p.targetPct) addLog(`👀 목표수익 ${pnlPct.toFixed(2)}% ≥ ${p.targetPct}% 도달!`);
+      if (pos && pnlPct <= p.stopLossPct) addLog(`👀 손절라인 ${pnlPct.toFixed(2)}% ≤ ${p.stopLossPct}% 도달!`);
 
       // 매수: RSI가 rsiBuy 이하 터치
       if (!pos && currentRsi <= p.rsiBuy) {
@@ -3682,6 +3762,11 @@ function Bot2Strategy({ config }) {
       const pnlPct = pos ? (currentPrice - pos.price) / pos.price * 100 : null;
 
       setLiveData({ price: currentPrice, dropRate, status: "실행 중", pnlPct });
+
+      // 조건 감지 로그
+      if (dropRate <= -p.dropPct) addLog(`👀 ${p.lookbackMin}분 ${dropRate.toFixed(2)}% 하락 감지! $${currentPrice.toFixed(2)}`);
+      if (pos && pnlPct >= p.targetPct) addLog(`👀 목표수익 ${pnlPct.toFixed(2)}% 도달!`);
+      if (pos && pnlPct <= p.stopLossPct) addLog(`👀 손절라인 ${pnlPct.toFixed(2)}% 도달!`);
 
       // 매수
       if (!pos && dropRate <= -p.dropPct) {
