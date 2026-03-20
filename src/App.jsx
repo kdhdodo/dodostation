@@ -2042,51 +2042,13 @@ function RSIMap() {
   );
 }
 
-// ── KIS API ──
-const KIS_APPKEY = import.meta.env.VITE_KIS_APPKEY;
-const KIS_APPSECRET = import.meta.env.VITE_KIS_APPSECRET;
-const KIS_ACCOUNT = import.meta.env.VITE_KIS_ACCOUNT;
-const KIS_ACCOUNT_CD = import.meta.env.VITE_KIS_ACCOUNT_CD;
-
-let _kisToken = null, _kisTokenExp = 0;
-async function getKISToken() {
-  if (_kisToken && Date.now() < _kisTokenExp) return _kisToken;
-  // localStorage에서 캐시 확인
-  try {
-    const cached = JSON.parse(localStorage.getItem("kis_token"));
-    if (cached && Date.now() < cached.exp) { _kisToken = cached.token; _kisTokenExp = cached.exp; return _kisToken; }
-  } catch {}
-  try {
-    const res = await fetch("/api/kis/oauth2/tokenP", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ grant_type: "client_credentials", appkey: KIS_APPKEY, appsecret: KIS_APPSECRET })
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (!json.access_token) return null;
-    _kisToken = json.access_token;
-    _kisTokenExp = Date.now() + 23 * 3600000;
-    try { localStorage.setItem("kis_token", JSON.stringify({ token: _kisToken, exp: _kisTokenExp })); } catch {}
-    return _kisToken;
-  } catch { return null; }
-}
-
+// ── KIS API (키는 서버사이드에서 관리) ──
 async function kisAPI(path, params = {}, trId = "") {
-  const token = await getKISToken();
-  if (!token) { console.warn("[KIS] no token"); return null; }
   const url = new URL(`/api/kis${path}`, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   try {
     const res = await fetch(url, {
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        authorization: `Bearer ${token}`,
-        appkey: KIS_APPKEY,
-        appsecret: KIS_APPSECRET,
-        tr_id: trId,
-        custtype: "P",
-      }
+      headers: { tr_id: trId }
     });
     const json = await res.json();
     if (json.rt_cd === "1") console.warn(`[KIS] ${trId} error:`, json.msg1);
@@ -2104,7 +2066,7 @@ async function fetchOverseasBalance() {
   const all = [];
   for (const ex of exchanges) {
     const data = await kisAPI("/uapi/overseas-stock/v1/trading/inquire-balance", {
-      CANO: KIS_ACCOUNT, ACNT_PRDT_CD: KIS_ACCOUNT_CD,
+      
       OVRS_EXCG_CD: ex.code, TR_CRCY_CD: "USD",
       CTX_AREA_FK200: "", CTX_AREA_NK200: ""
     }, ex.trId);
@@ -2152,7 +2114,7 @@ async function fetchAccountBalance() {
   // 1. 국내 계좌잔고 조회 (원화 예수금)
   try {
     const data = await kisAPI("/uapi/domestic-stock/v1/trading/inquire-account-balance", {
-      CANO: KIS_ACCOUNT, ACNT_PRDT_CD: KIS_ACCOUNT_CD,
+      
       INQR_DVSN_1: "", BSPR_BF_DT_APLY_YN: ""
     }, "CTRP6548R");
     const o2 = data?.output2;
@@ -2167,7 +2129,7 @@ async function fetchAccountBalance() {
   // 2. 해외증거금 통화별조회 (달러 예수금)
   try {
     const margin = await kisAPI("/uapi/overseas-stock/v1/trading/foreign-margin", {
-      CANO: KIS_ACCOUNT, ACNT_PRDT_CD: KIS_ACCOUNT_CD
+      
     }, "TTTC2101R");
     if (margin?.output) {
       const items = Array.isArray(margin.output) ? margin.output : [margin.output];
