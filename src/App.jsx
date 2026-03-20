@@ -2211,16 +2211,40 @@ function QuickOrderTest() {
   const [ticker, setTicker] = useState("AAPL");
   const [qty, setQty] = useState(1);
   const [price, setPrice] = useState("");
+  const [currentPrice, setCurrentPrice] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
+
+  // 현재가 조회
+  const fetchPrice = async () => {
+    if (!ticker) return;
+    setFetching(true);
+    try {
+      const res = await fetch(`/api/yahoo/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`);
+      if (res.ok) {
+        const json = await res.json();
+        const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(v => v != null) || [];
+        if (closes.length) {
+          const p = closes[closes.length - 1];
+          setCurrentPrice(p);
+          setPrice(p.toFixed(2));
+        }
+      }
+    } catch {}
+    setFetching(false);
+  };
+
+  // 종목 바뀌면 자동 조회
+  useEffect(() => { if (ticker.length >= 1) fetchPrice(); }, [ticker]);
 
   const placeOrder = async (side) => {
-    if (!ticker || qty <= 0) return;
-    const confirmed = confirm(`${side === "buy" ? "매수" : "매도"} 주문\n종목: ${ticker}\n수량: ${qty}주\n${price ? `가격: $${price} (지정가)` : "시장가"}\n\n진행할까요?`);
+    if (!ticker || qty <= 0 || !price) { alert("가격을 입력하세요"); return; }
+    const confirmed = confirm(`${side === "buy" ? "매수" : "매도"} 주문\n종목: ${ticker}\n수량: ${qty}주\n가격: $${price}\n\n실제 주문입니다. 진행할까요?`);
     if (!confirmed) return;
     setLoading(true);
     setResult(null);
-    const json = await kisOrder(side, ticker, qty, price || "0");
+    const json = await kisOrder(side, ticker, qty, price);
     setResult(json);
     setLoading(false);
   };
@@ -2228,7 +2252,7 @@ function QuickOrderTest() {
   return (
     <div style={{ marginTop:20, background:"#11141c", borderRadius:10, padding:16 }}>
       <div style={{ fontSize:13, fontWeight:600, color:"#fff", marginBottom:12 }}>주문 테스트</div>
-      <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+      <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap", alignItems:"flex-end" }}>
         <div>
           <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>종목</div>
           <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} style={{ width:80, background:"#0d0f14", border:"1px solid #333", borderRadius:4, color:"#fff", fontSize:12, padding:"6px 8px" }} />
@@ -2238,13 +2262,16 @@ function QuickOrderTest() {
           <input type="number" value={qty} onChange={e => setQty(parseInt(e.target.value)||1)} min={1} style={{ width:50, background:"#0d0f14", border:"1px solid #333", borderRadius:4, color:"#fff", fontSize:12, padding:"6px 8px" }} />
         </div>
         <div>
-          <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>가격 (빈칸=시장가)</div>
-          <input value={price} onChange={e => setPrice(e.target.value)} placeholder="시장가" style={{ width:80, background:"#0d0f14", border:"1px solid #333", borderRadius:4, color:"#fff", fontSize:12, padding:"6px 8px" }} />
+          <div style={{ color:"#555", fontSize:10, marginBottom:4 }}>가격 {currentPrice ? `(현재 $${currentPrice.toFixed(2)})` : ""}</div>
+          <div style={{ display:"flex", gap:4 }}>
+            <input value={price} onChange={e => setPrice(e.target.value)} placeholder="가격" style={{ width:80, background:"#0d0f14", border:"1px solid #333", borderRadius:4, color:"#fff", fontSize:12, padding:"6px 8px" }} />
+            <button onClick={fetchPrice} disabled={fetching} style={{ background:"#1e2130", border:"1px solid #333", borderRadius:4, color:"#f5c518", fontSize:10, padding:"4px 8px", cursor:"pointer" }}>{fetching ? "..." : "현재가"}</button>
+          </div>
         </div>
       </div>
       <div style={{ display:"flex", gap:8 }}>
-        <button onClick={() => placeOrder("buy")} disabled={loading} style={{ flex:1, background:"#4caf50", border:"none", borderRadius:6, padding:"10px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>{loading ? "주문 중..." : "매수"}</button>
-        <button onClick={() => placeOrder("sell")} disabled={loading} style={{ flex:1, background:"#f44336", border:"none", borderRadius:6, padding:"10px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>{loading ? "주문 중..." : "매도"}</button>
+        <button onClick={() => placeOrder("buy")} disabled={loading || !price} style={{ flex:1, background: price ? "#4caf50" : "#333", border:"none", borderRadius:6, padding:"10px", color:"#fff", fontSize:13, fontWeight:700, cursor: price ? "pointer" : "default" }}>{loading ? "주문 중..." : "매수"}</button>
+        <button onClick={() => placeOrder("sell")} disabled={loading || !price} style={{ flex:1, background: price ? "#f44336" : "#333", border:"none", borderRadius:6, padding:"10px", color:"#fff", fontSize:13, fontWeight:700, cursor: price ? "pointer" : "default" }}>{loading ? "주문 중..." : "매도"}</button>
       </div>
       {result && (
         <div style={{ marginTop:10, background:"#0d0f14", borderRadius:6, padding:10, fontSize:11 }}>
