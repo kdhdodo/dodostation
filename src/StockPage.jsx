@@ -11,7 +11,7 @@ function useMobile() {
   return isMobile;
 }
 
-const OPENAI_KEY = import.meta.env.VITE_OPENAI_KEY;
+// OpenAI key는 서버사이드에서 관리 (/api/openai)
 
 export default function StockPage() {
   const isMobile = useMobile();
@@ -375,7 +375,7 @@ function buildAnalysisData(data) {
 
 async function fetchGPTAnalysis(data, setter) {
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
+    const res = await fetch("/api/openai", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model: "gpt-4o", messages: [{ role: "system", content: "주식 기술적 분석 전문가. 한국어 3~5줄. 매수/매도/관망 의견." }, { role: "user", content: `${data.ticker}: $${data.lastPrice}, 5일${data.priceChange5d}%, 20일${data.priceChange20d}%, RSI${data.rsi}, MACD${data.macdLine}/Sig${data.signal}, MA5$${data.ma5}/MA20$${data.ma20}` }], max_tokens: 300, temperature: 0.3 }) });
     setter((await res.json()).choices?.[0]?.message?.content || "분석 실패");
   } catch { setter("오류"); }
@@ -383,7 +383,7 @@ async function fetchGPTAnalysis(data, setter) {
 
 async function fetchClaudeAnalysis(data, setter) {
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
+    const res = await fetch("/api/openai", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model: "gpt-4o", messages: [{ role: "system", content: "보수적 리스크 분석가. 한국어 3~5줄. 리스크/주의사항 위주." }, { role: "user", content: `${data.ticker} 리스크: $${data.lastPrice}, 5일${data.priceChange5d}%, 20일${data.priceChange20d}%, RSI${data.rsi}, MACD${data.macdLine}/Sig${data.signal}, MA5$${data.ma5}/MA20$${data.ma20}` }], max_tokens: 300, temperature: 0.3 }) });
     setter((await res.json()).choices?.[0]?.message?.content || "분석 실패");
   } catch { setter("오류"); }
