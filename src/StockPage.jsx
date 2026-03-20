@@ -67,10 +67,7 @@ export default function StockPage() {
       try {
         const q = val.trim();
         let data;
-        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-        const searchUrl = isLocal
-          ? `/api/yahoo/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`
-          : `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query2.finance.yahoo.com/v1/finance/search?q=${q}&quotesCount=8&newsCount=0`)}`;
+        const searchUrl = `/api/yahoo/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
         const res = await fetch(searchUrl);
         data = await res.json();
         const quotes = (data.quotes || []).map(q => ({ symbol: q.symbol, name: q.shortname || q.longname || "", type: q.quoteType || "", exchange: q.exchDisp || "" }));
